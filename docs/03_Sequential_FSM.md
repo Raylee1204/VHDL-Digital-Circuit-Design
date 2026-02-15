@@ -1,89 +1,68 @@
-# Module 03: Finite State Machines (FSM) & Clocking
+# Module 03: Sequential Logic, RTL Analysis & FSM
 
-本模組深入探討數位系統的核心控制單元——有限狀態機 (FSM)，以及時脈電路的設計考量。實驗包含基礎的 D-Flip Flop 行為描述、積時脈 (Gated Clock) 的現象觀察，以及 Mealy 與 Moore 兩種狀態機架構的實作與比較。
+本模組深入探討 VHDL 描述風格 (Description Style) 對電路合成結果的影響，以及有限狀態機 (FSM) 的設計架構。
+實驗重點在於透過 **RTL 視圖 (Register Transfer Level View)** 觀察不同程式碼寫法如何映射到實際的邏輯閘與正反器，並實作積時脈 (Gated Clock) 延時電路與 FSM 控制器。
 
-## 1. D-Flip Flop & Gated Clock Analysis
+## 1. Gated Clock Delay Circuit (積時脈延時電路)
 
-### 1.1 D-Flip Flop (DFF) vs. Latch
-在 VHDL 中，正確描述時序邏輯至關重要。
-* **DFF (Edge-Triggered)**: 僅在時脈邊緣 (Rising/Falling Edge) 更新輸出。這是同步設計的基礎。
-* **Latch (Level-Sensitive)**: 在致能訊號 (Enable) 為高電位時，輸出隨輸入變化。
-    * *Design Note*: 在 FPGA/ASIC 設計中，應盡量避免非預期的 Latch (Infer Latch)，因為這會導致靜態時序分析 (STA) 困難。
+本實驗設計一個由 3 級 DFF 串接而成的延時電路 (Shift Register)，並透過 Enable 訊號控制時脈輸入 (Clock Gating)。我們採用兩種不同的 VHDL 風格進行實作並比較結果。
 
-### 1.2 Gated Clock (積時脈)
-本實驗透過邏輯閘 (AND Gate) 控制時脈的傳遞：`Gated_Clk <= Clk AND Enable`。
+### 1.1 Structural Description (結構化描述)
+此方法模擬「畫電路圖」的過程。我們先定義一個標準的 `D_FlipFlop` 元件 (Component)，再於上層電路中利用 `PORT MAP` 將其串接，並手動描述 AND 閘來控制 Clock。
 
-* **Observation**: 雖然這能停止下游電路的運作以節省功耗，但若 `Enable` 訊號在 `Clk` 為 High 時切換，會產生 **Glitch (毛邊/窄脈衝)**，導致電路誤動作。
-* **Professional Insight**: 
-    在實際 IC 設計中，必須使用標準元件庫 (Standard Cell) 中的 **Integrated Clock Gating (ICG)** Cell 來取代手動邏輯閘，以確保時脈訊號的完整性 (Clock Integrity)。
+* **Implementation**: Explicitly instantiating DFF primitives.
+* **RTL Observation**: 合成出的電路圖應精確顯示出 3 個 DFF 元件，且其 Clock端皆連接到同一個 AND 閘的輸出。
 
-    -- Code Snippet: Manual Gated Clock (For Educational Demo)
-    gated_clk <= clk and enable;
+    -- Code Snippet: Structural Gated Clock
+    Gated_Clk <= Sys_Clk AND En;
     
-    process(gated_clk)
-    begin
-        if rising_edge(gated_clk) then
-            q <= d;
-        end if;
-    end process;
+    U1: DFF PORT MAP (D => Input, Clk => Gated_Clk, Q => W1);
+    U2: DFF PORT MAP (D => W1,    Clk => Gated_Clk, Q => W2);
+    U3: DFF PORT MAP (D => W2,    Clk => Gated_Clk, Q => Output);
+
+### 1.2 Behavioral Description (行為描述)
+此方法直接描述電路的運作邏輯。利用 `PROCESS` 與 `RISING_EDGE` 描述暫存器行為，讓合成器 (Synthesizer) 自動推斷電路結構。
+
+* **Implementation**: Using a single process with a variable/signal array.
+* **RTL Observation**: 觀察合成器是否生成了與結構化描述相同的電路，或是利用了 FPGA 內部的 Clock Enable (CE) 腳位來取代 AND 閘 (這是現代工具常見的優化)。
 
 ---
 
 ## 2. Finite State Machine (FSM) Design
 
-FSM 是控制資料路徑 (Datapath) 的核心邏輯。標準的 VHDL FSM 寫法通常包含三個部分：
-1.  **State Register**: 處理時脈與重置，更新 Current State。
-2.  **Next State Logic**: 組合邏輯，根據 Input 計算 Next State。
-3.  **Output Logic**: 組合邏輯，決定輸出值。
+FSM 是數位控制器的核心。本實驗針對同一邏輯功能分別實作 Mealy 與 Moore 架構，觀察其輸出時序的差異。
 
-### 2.1 Moore Machine (莫爾機)
-* **Definition**: 輸出 (Output) **僅取決於當前狀態 (Current State)**。
-* **Characteristics**: 輸出訊號與時脈同步，較穩定，不會受到輸入訊號雜訊的直接干擾。
-* **Simulation Behavior**: 輸出變化通常會比輸入訊號晚一個時脈週期 (Latency)。
+### 2.1 Mealy Machine (米利機)
+* **Logic**: $Output = F(Current\_State, Input)$
+* **Characteristics**: 輸出隨輸入訊號 **即時改變 (Asynchronous to Clock)**。
+* **Pros/Cons**: 反應速度快，但容易受輸入雜訊 (Glitch) 影響導致輸出不穩。
 
-    -- Code Snippet: Moore Output Logic
-    process(current_state)
-    begin
-        case current_state is
-            when S0 => output <= "00";
-            when S1 => output <= "01"; -- Output depends ONLY on state
-            -- ...
-        end case;
-    end process;
-
-### 2.2 Mealy Machine (米利機)
-* **Definition**: 輸出 (Output) 取決於 **當前狀態 (Current State) 與 當前輸入 (Input)**。
-* **Characteristics**: 能比 Moore 機更快響應輸入變化 (少一個 Cycle)，但輸入端的雜訊 (Glitch) 可能會直接傳導到輸出端。
-
-    -- Code Snippet: Mealy Output Logic
-    process(current_state, input_signal)
-    begin
-        case current_state is
-            when S0 => 
-                if input_signal = '1' then
-                    output <= "10"; -- Output depends on State AND Input
-                else
-                    output <= "00";
-                end if;
-            -- ...
-        end case;
-    end process;
+### 2.2 Moore Machine (莫爾機)
+* **Logic**: $Output = F(Current\_State)$
+* **Characteristics**: 輸出僅在狀態改變時更新，與輸入訊號無直接路徑。
+* **Pros/Cons**: 輸出與時脈同步 (Synchronous)，訊號品質佳，但反應較 Mealy 慢一個時脈週期。
 
 ---
 
-## 3. Verification (Waveform & State Diagram)
+## 3. Verification & Analysis
 
-### 3.1 State Transition Analysis
-為了驗證 FSM 的邏輯覆蓋率，我們繪製了狀態轉移圖 (State Diagram) 並對照波形模擬結果。
+本模組的驗證重點在於 **RTL 結構分析** 與 **波形時序比較**。
 
-![FSM State Diagram](../assets/fsm_state_diagram.png)
-*(Figure: 設計之狀態轉移圖，定義了所有狀態與跳轉條件)*
+### 3.1 RTL Schematic Analysis (Gated Clock)
+下圖比較了結構化 (左) 與行為化 (右) 描述的合成結果：
 
-### 3.2 Waveform Comparison (Mealy vs. Moore)
-下圖展示了針對同一邏輯功能 (例如序列偵測器 "101")，Mealy 與 Moore 機的輸出時序差異。
+<img width="1331" height="291" alt="image" src="https://github.com/user-attachments/assets/30aa0b72-0d43-468f-a606-07bab8d89f0f" />
 
-![Mealy vs Moore](../assets/waveform_mealy_vs_moore.png)
-*(Figure: 上方為 Mealy 輸出，可見其在 Input 變化瞬間即改變；下方為 Moore 輸出，嚴格對齊 Clock)*
+*(Figure: 左圖顯示明確的 AND 閘與 DFF；右圖顯示合成器優化後的暫存器結構)*
 
-> **Analysis**:
-> Mealy 機的輸出在第 N 個週期即產生反應，展現了較低的延遲；而 Moore 機的輸出則穩定地在第 N+1 個週期的 Clock Edge 後才轉態，提供了較佳的訊號品質。在系統設計中，需根據 Timing Budget 權衡選擇。
+> **Analysis**: 
+> 結構化寫法強制產生了 Clock Gating Logic，這在低功耗設計中很有用，但需注意 Glitch 風險。行為化寫法通常被映射為帶有 Clock Enable 的 Flip-Flop，時序較為安全。
+
+### 3.2 FSM Waveform Comparison
+下圖展示了 Mealy 與 Moore 機在相同輸入序列下的輸出反應：
+
+<img width="1037" height="642" alt="image" src="https://github.com/user-attachments/assets/e0a9ef42-74aa-40e3-a530-9ecad9b12a10" />
+
+<img width="1151" height="474" alt="image" src="https://github.com/user-attachments/assets/3a6e5637-fb63-4d13-8071-320c14aa4e8a" />
+
+*(Figure: 上方為 Mealy 輸出，可見其在 Input 變化時立即轉態；下方為 Moore 輸出，嚴格對齊 Clock Edge)*
