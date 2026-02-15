@@ -62,8 +62,8 @@ BCD (Binary-Coded Decimal) 使用 4 個 bit 表示 0~9 的十進位數字。
 * **Reset Priority**: 驗證 Reset 拉高時，無論 Clock 為何，Output 立即歸零。
 * **Edge Trigger**: 驗證數值的變化嚴格對齊 Clock 的 Rising Edge。
 
-![Counter Waveform](../assets/waveform_counter.png)
-*(Figure: 上/下數計數器的時序模擬，展示 Reset 與 Clock Edge 的關係)*
+<img width="1280" height="373" alt="image" src="https://github.com/user-attachments/assets/cb1517da-e72c-482b-945e-1524172b6e76" />
+
 
 > **Observation**:
 > 如圖所示，計數器在 Reset 解除後開始運作。當 `Up/Down` 訊號改變時，計數方向在下一個 Clock Edge 正確切換，證明 setup/hold time 符合邏輯預期。
